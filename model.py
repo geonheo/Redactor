@@ -6,7 +6,7 @@ from sklearn.ensemble import AdaBoostClassifier
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.neural_network import MLPClassifier
 
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, log_loss
 from sklearn.model_selection import KFold
 import numpy as np
 import pandas as pd
@@ -24,7 +24,7 @@ class Models:
             aux_name: prefix name for distinguishing models according to the purpose
         """
         
-        self.model_names = ['nn_tanh_10_2','nn_relu_5_2', 'nn_relu_50_25', 'nn_relu_200_100', 
+        self.model_names = ['nn_tanh_5_2','nn_tanh_10_2','nn_relu_5_2', 'nn_relu_50_25', 'nn_relu_200_100', 
                             'nn_relu_25_10','nn_log_5_2', 'nn_identity', 'tree_gini', 
                             'tree_entropy', 'svm_rbf', 'svm_linear', 'svm_poly', 
                             'svm_sigmoid', 'rf_gini', 'rf_entropy', 
@@ -33,6 +33,8 @@ class Models:
         
         
         # Neural Network Models
+        nn_tanh_5_2 = MLPClassifier(activation = 'tanh', solver='lbfgs', alpha=1e-1, 
+                                 hidden_layer_sizes=(5, 2), random_state=1, warm_start=True)
         nn_tanh_10_2 = MLPClassifier(activation = 'tanh', solver='lbfgs', alpha=1e-1, 
                                  hidden_layer_sizes=(10, 2), random_state=1, warm_start=True)
         nn_relu_5_2 = MLPClassifier(activation = 'relu', solver='adam', alpha=1e-1, 
@@ -80,9 +82,10 @@ class Models:
                                      fit_intercept = True, solver = 'liblinear')
         
         self.model_dict = {
-            'nn_tanh_10_2' : nn_tanh_10_2, 'nn_relu_5_2' : nn_relu_5_2, 'nn_relu_50_25' : nn_relu_50_25, 
-            'nn_relu_200_100' : nn_relu_200_100, 'nn_relu_25_10' : nn_relu_25_10, 'nn_log_5_2' : nn_log_5_2, 
-            'nn_identity' : nn_identity, 'svm_rbf' : svm_rbf, 'svm_linear' : svm_linear, 'svm_poly' : svm_poly, 
+            'nn_tanh_5_2' : nn_tanh_5_2,'nn_tanh_10_2' : nn_tanh_10_2, 'nn_relu_5_2' : nn_relu_5_2, 
+            'nn_relu_50_25' : nn_relu_50_25, 'nn_relu_200_100' : nn_relu_200_100, 'nn_relu_25_10' : nn_relu_25_10,
+            'nn_log_5_2' : nn_log_5_2, 'nn_identity' : nn_identity, 
+            'svm_rbf' : svm_rbf, 'svm_linear' : svm_linear, 'svm_poly' : svm_poly, 
             'svm_sigmoid' : svm_sigmoid, 'tree_gini' : tree_gini, 'tree_entropy' : tree_entropy, 'rf_gini' : rf_gini, 
             'rf_entropy' : rf_entropy, 'gb' : gb, 'ada' : ada, 'log_reg' : log_reg
         }
@@ -186,7 +189,54 @@ class AttackModels(Models):
         super().define_models(mnames, 'a') 
         
     
+def attack_input(vmodel, xtr, ytr, xte, yte, xta, yta):
+    """
+    Generate attack inputs for MI attack using all datasets.
+    
+    Args:
+        vmodel: victime model
+        xtr, ytr: training dataset
+        xte, yte: test dataset
+        xta, yta: target dataset
+    """
+    def cross_entropy(y1, y2):
+        def cce(y_true, y_pred):
+            one_hot = np.zeros(2)
+            one_hot[y_true] = 1
+            return log_loss([one_hot], [y_pred])
+        return np.array([cce(y1[i], y2[i]) for i in range(len(y1))])
 
+    labels_train = np.ones(len(ytr))
+    labels_test = np.zeros(len(yte))
+    labels_target = np.zeros(len(yta))
+
+    for ti in range(len(yta)):
+        tr_num = len(np.where((xtr == xta[ti]).all(axis=1))[0])
+        te_num = len(np.where((xte == xta[ti]).all(axis=1))[0])
+        if tr_num >= te_num:
+            labels_target[ti] = 1
+
+    sample_idx = np.random.choice(np.arange(len(xtr)), len(xte))
+
+    prob_train = vmodel.predict_proba(xtr[sample_idx])
+    prob_test = vmodel.predict_proba(xte)
+    prob_target = vmodel.predict_proba(xta)
+
+    loss_train = cross_entropy(ytr[sample_idx], prob_train)
+    loss_test = cross_entropy(yte, prob_test)
+    loss_target = cross_entropy(yta, prob_target)
+
+    feature_train = np.c_[prob_train, loss_train]
+    feature_test = np.c_[prob_test, loss_test]
+    feature_target = np.c_[prob_target, loss_target]
+    
+    x_mia = np.r_[feature_train, feature_test]
+    y_mia = np.r_[labels_train[sample_idx], labels_test]
+
+    return x_mia, y_mia, feature_target, labels_target
+
+        
+        
     
 
 

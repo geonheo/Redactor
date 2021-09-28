@@ -89,3 +89,12 @@ def data_num2cat(data, cols):
             cond = (st[i]<data[c]) & (data[c]<=st[i+1])
             tmp[c].loc[cond] = str(i)
     return tmp
+
+def compare_result(r1, r2):
+    a = r2-r1
+    mean = a.mean(axis=0)*100
+    std = a.std(axis=0)*100
+    result = pd.concat([mean, std],axis=1)
+    result.columns = ['mean', 'std']
+    return result
+    
