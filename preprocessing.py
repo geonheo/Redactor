@@ -90,7 +90,7 @@ class Dataset:
 
     def load_compas_data(self):
         """
-        Load AdultCensus dataset.
+        Load COMPAS dataset.
         """
         
         raw_data = pd.read_csv('./dataset/compas-scores-two-years.csv')
