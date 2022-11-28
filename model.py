@@ -6,12 +6,13 @@ from sklearn.ensemble import AdaBoostClassifier
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.neural_network import MLPClassifier
 
-from sklearn.metrics import accuracy_score, log_loss
+from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, log_loss
 from sklearn.model_selection import KFold
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
 import copy
+
 
 
 class Models:
@@ -24,11 +25,11 @@ class Models:
             aux_name: prefix name for distinguishing models according to the purpose
         """
         
-        self.model_names = ['nn_tanh_5_2','nn_tanh_10_2','nn_relu_5_2', 'nn_relu_50_25', 'nn_relu_200_100', 
-                            'nn_relu_25_10','nn_log_5_2', 'nn_identity', 'tree_gini', 
-                            'tree_entropy', 'svm_rbf', 'svm_linear', 'svm_poly', 
-                            'svm_sigmoid', 'rf_gini', 'rf_entropy', 
-                            'gb', 'ada', 'log_reg'] if not mnames else mnames
+        self.model_names = np.array(['nn_tanh_5_2','nn_tanh_10_2','nn_relu_5_2', 'nn_relu_50_25', 'nn_relu_200_100', 
+                                    'nn_relu_25_10','nn_log_5_2', 'nn_identity', 'tree_gini', 
+                                    'tree_entropy', 'svm_rbf', 'svm_linear', 'svm_poly', 
+                                    'svm_sigmoid', 'rf_gini', 'rf_entropy', 
+                                    'gb', 'ada', 'log_reg']) if not mnames else np.array(mnames)
         
         
         
@@ -122,7 +123,7 @@ class Models:
                 result[i] += accuracy_score(y_val, pred)/k
         return result
     
-    def show_performance(self, xy_pairs, cnames=None):
+    def show_performance(self, xy_pairs, cnames=None, ptype='acc'):
         """
         Show the performance of the models.
         
@@ -130,15 +131,41 @@ class Models:
             xy_pairs: (x, y) pairs to test the model
             cnames: column display names of the performance table
         """
+        
         result = np.zeros((len(self.models), len(xy_pairs)))
         for i, (model, name) in tqdm(enumerate(zip(self.models, self.model_names))):
             for j, (x, y) in enumerate(xy_pairs):
-                pred = model.predict(x)
-                result[i,j] = accuracy_score(y, pred)
+                if ptype == 'acc':
+                    pred = model.predict(x)
+                    result[i,j] = accuracy_score(y, pred)
+                elif ptype == 'max_conf':
+                    try:
+                        conf = model.predict_proba(x).max(axis=1)
+                        result[i,j] = np.mean(conf)
+                    except:
+                        result[i,j] = 0
+                elif ptype == 'y_conf':
+                    try:
+                        conf = model.predict_proba(x)[np.arange(len(y)), y]
+                        result[i,j] = np.mean(conf)
+                    except:
+                        result[i,j] = 0
+                elif ptype == 'f1':
+                    pred = model.predict(x)
+                    result[i,j] = f1_score(y, pred, average='micro')
+                elif ptype == 'bin_auc':
+                    try:
+                        prob = model.predict_proba(x)[:,1]
+                        result[i,j] = roc_auc_score(y, prob)
+                    except:
+                        result[i,j] = 0
+                else:
+                    print('Invalid "ptype" input')
+                    return None
+                    
         if cnames == None:
             cnames = ['data%s' % str(i+1) for i in range(len(xy_pairs))]
-        return round(pd.DataFrame(result, index=self.model_names, columns=['%s acc' % c for c in cnames]), 4)
-        
+        return round(pd.DataFrame(result, index=self.model_names, columns=['%s %s' % (c, ptype) for c in cnames]), 4)
     
     def train_all(self, x, y):
         """
@@ -148,6 +175,7 @@ class Models:
             x: training data
             y: labels of the training data
         """
+        np.random.seed(123)
         print('train models..')
         for m in tqdm(self.models):
             m.fit(x, y)
@@ -192,6 +220,7 @@ class AttackModels(Models):
 def attack_input(vmodel, xtr, ytr, xte, yte, xta, yta):
     """
     Generate attack inputs for MI attack using all datasets.
+    Input size is 3 (output of the victim model+loss) and output of the attack model is the membership.
     
     Args:
         vmodel: victime model
@@ -199,9 +228,11 @@ def attack_input(vmodel, xtr, ytr, xte, yte, xta, yta):
         xte, yte: test dataset
         xta, yta: target dataset
     """
+    np.random.seed(123)
+    
     def cross_entropy(y1, y2):
         def cce(y_true, y_pred):
-            one_hot = np.zeros(2)
+            one_hot = np.zeros(ytr.max()+1)
             one_hot[y_true] = 1
             return log_loss([one_hot], [y_pred])
         return np.array([cce(y1[i], y2[i]) for i in range(len(y1))])
