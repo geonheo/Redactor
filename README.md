@@ -13,5 +13,5 @@ We perform a comparison of our disinformation with real data to see how realisti
 You can check the other examples in [this link](https://forms.gle/6VHGs5KyiMRbVeNB6).
 
 ## How to use
-Please refer to "AdultCensus Tutorial" files.
+Please refer to "AdultCensus Tutorial.ipynb" files.
 
